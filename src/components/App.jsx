@@ -1,4 +1,4 @@
-import { Component } from 'react';
+import { useEffect, useState } from 'react';
 import { CompApp } from './App.styled';
 import ImageGallery from './ImageGallery/ImageGallery';
 import LoadMoreButton from './Button/Button';
@@ -8,107 +8,94 @@ import { fetchPhoto } from 'api/fetchPhoto';
 import Loader from './Loader/Loader';
 import { Modal } from './Modal/Modal';
 
-export class App extends Component {
-  state = {
-    page: 1,
-    query: '',
-    images: [],
-    totalItems: 0,
-    loading: false,
-    isModalShow: false,
-    modalData: {
-      largeImageUrl: '',
-      altName: '',
-    },
-  };
+export const App = () => {
+  const [page, setPage] = useState(1);
+  const [query, setQuery] = useState('');
+  const [images, setImages] = useState([]);
+  const [totalItems, setTotalItems] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [isModalShow, setIsModalShow] = useState(false);
+  const [modalData, setModalData] = useState({
+    largeImageUrl: '',
+    altName: '',
+  });
 
-  async componentDidUpdate(_, prevState) {
-    const { query, page, images } = this.state;
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        setLoading(true);
 
-    if (prevState.query !== query || prevState.page !== page) {
-      this.setState({ loading: true });
+        const res = await fetchPhoto(query, page);
 
-      await fetchPhoto(query, page)
-        .then(res => {
-          if (res.hits.length === 0) {
-            Notify.failure('No images were found for your request');
-            return;
-          }
+        if (res.hits.length === 0) {
+          Notify.failure('No images were found for your request');
+          return;
+        }
 
-          if (prevState.totalItems !== res.total) {
-            Notify.success(`We found ${res.total} images`);
-          }
-          const response = res.hits.map(
-            ({ webformatURL, tags, largeImageURL, id }) => {
-              return {
-                id,
-                webformatURL,
-                tags,
-                largeImageURL,
-              };
-            }
-          );
+        if (totalItems !== res.total) {
+          Notify.success(`We found ${res.total} images`);
+        }
 
-          this.setState(() => {
-            return {
-              images: [...images, ...response],
-              totalItems: res.total,
-            };
-          });
-        })
-        .catch(error => Notify.failure(error.message))
-        .finally(() => this.setState({ loading: false }));
+        const response = res.hits.map(
+          ({ webformatURL, tags, largeImageURL, id }) => ({
+            id,
+            webformatURL,
+            tags,
+            largeImageURL,
+          })
+        );
+
+        setImages(prevImages => [...prevImages, ...response]);
+        setTotalItems(res.total);
+      } catch (error) {
+        Notify.failure(error.message);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    if (query !== '' && (page !== 1 || images.length === 0)) {
+      fetchData();
     }
-  }
+  }, [query, page, images.length, totalItems]);
 
-  onSubmit = query => {
-    if (this.state.query !== query) {
-      this.setState({ query, images: [], page: 1 });
+  const onSubmit = newQuery => {
+    if (query !== newQuery) {
+      setQuery(newQuery);
+      setImages([]);
+      setPage(1);
     }
   };
 
-  toggleModalIsShow = () => {
-    this.setState(({ isModalShow }) => ({
-      isModalShow: !isModalShow,
-    }));
+  const toggleModalIsShow = () => {
+    setIsModalShow(!isModalShow);
   };
 
-  openModalWindow = newModalData => {
-    if (newModalData.largeImageUrl !== this.state.modalData.largeImageUrl) {
-      this.setState(() => {
-        return {
-          modalData: { ...newModalData },
-        };
-      });
+  const openModalWindow = newModalData => {
+    if (newModalData.largeImageUrl !== modalData.largeImageUrl) {
+      setModalData(...newModalData);
     }
-    this.toggleModalIsShow();
+
+    toggleModalIsShow();
   };
 
-  handleLoadMore = () => {
-    this.setState(prevState => ({ page: prevState.page + 1 }));
+  const handleLoadMore = () => {
+    setPage(prevPage => prevPage + 1);
   };
 
-  render() {
-    const { images, loading, totalItems, page, isModalShow, modalData } =
-      this.state;
+  return (
+    <CompApp>
+      <SearchBar onSubmit={onSubmit}></SearchBar>
 
-    const { onSubmit, openModalWindow, handleLoadMore, toggleModalIsShow } =
-      this;
+      <ImageGallery images={images} openModalWindow={openModalWindow} />
+      {loading && <Loader />}
+      {images.length > 0 && totalItems > page * 12 && !loading && (
+        <LoadMoreButton handleClick={handleLoadMore} />
+      )}
 
-    return (
-      <CompApp>
-        <SearchBar onSubmit={onSubmit}></SearchBar>
-
-        <ImageGallery images={images} openModalWindow={openModalWindow} />
-        {loading && <Loader />}
-        {images.length > 0 && totalItems > page * 12 && !loading && (
-          <LoadMoreButton handleClick={handleLoadMore} />
-        )}
-
-        {isModalShow && (
-          <Modal modalData={modalData} onClose={toggleModalIsShow} />
-        )}
-      </CompApp>
-    );
-  }
-}
+      {isModalShow && (
+        <Modal modalData={modalData} onClose={toggleModalIsShow} />
+      )}
+    </CompApp>
+  );
+};
